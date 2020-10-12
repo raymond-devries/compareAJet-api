@@ -3,6 +3,7 @@ from pymongo import MongoClient, TEXT
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from typing import Optional, List
+from random import randrange
 
 app = FastAPI()
 
@@ -37,9 +38,19 @@ def search_jet_db(search_string):
     return list(results)
 
 
+def get_random_jet_db():
+    jet = list(jets_collection.aggregate([{"$sample": {"size": 1}}, {"$project": {"_id": 0, "name": 1, "slug": 1}}]))[0]
+    return jet
+
+
 @app.get("/jet/search/")
 def search_jets(jet_search_name: str):
     return search_jet_db(jet_search_name)
+
+
+@app.get("/jet/random/")
+def get_random_jet():
+    return get_random_jet_db()
 
 
 def get_jet_db(jet_slug: str):
@@ -55,13 +66,13 @@ def get_single_jet(jet_slug: str):
     return get_jet_db(jet_slug)
 
 
-def chart_data(jet_data: list, labels: list):
-    numeric_data = [{k: v for (k, v) in item.items() if isinstance(v, (int, float))} for item in jet_data]
-    labels = []
-    [labels.extend(numeric_data_keys.keys()) for numeric_data_keys in numeric_data]
-    labels = list(set(labels))
+def get_rgb_colors():
+    return [randrange(125, 250) for _ in range(3)]
+
+
+def radar_chart_data(jet_data: list, labels: list):
     chart_data = {"labels": labels, "datasets": []}
-    for number_data in numeric_data:
+    for number_data in jet_data:
         data = []
         for label in labels:
             try:
@@ -69,16 +80,53 @@ def chart_data(jet_data: list, labels: list):
             except KeyError:
                 data.append(0)
 
-        chart_data["datasets"].append({"data": data})
+        rgb = get_rgb_colors()
+        chart_data["datasets"].append({"data": data, "label": number_data["name"],
+                                       "backgroundColor": f"rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, 0.2)",
+                                       "borderColor": f"rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, 0.8)"})
 
     return chart_data
+
+
+def bar_chart_data(jet_data: list, field: str):
+    label = []
+    data = []
+    for item in jet_data:
+        label.append(item["name"])
+        try:
+            data.append(item[field])
+        except KeyError:
+            data.append(0)
+
+    rgb = get_rgb_colors()
+    return {"labels": label, "datasets": [{"data": data, "label": field,
+                                           "backgroundColor": f"rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, 0.5)",
+                                           "borderColor": f"rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, 0.8)"
+                                           }]}
+
+
+RADAR_CHART1 = ["Empty weight", "Gross weight", "Service ceiling"]
+RADAR_CHART2 = ["Length", "Wingspan", "Height"]
+BAR_CHARTS = ["Maximum speed", "Wing area", "number created"]
+
+USED_KEYS = RADAR_CHART1 + RADAR_CHART2 + BAR_CHARTS
 
 
 @app.get("/jet/charts/", )
 def get_jet_charts(jet_slugs: Optional[List[str]] = Query(None)):
     jet_data = get_multiple_jets_db(jet_slugs)
-    return {"names": [data["name"] for data in jet_data],
-            "radar_chart": chart_data(jet_data)}
+    chart_data = {"names": [data["name"] for data in jet_data],
+                  "radar_chart1": radar_chart_data(jet_data, RADAR_CHART1),
+                  "radar_chart2": radar_chart_data(jet_data, RADAR_CHART2),
+                  "bar_charts": {item + "bar chart": bar_chart_data(jet_data, item) for item in BAR_CHARTS}}
+    for jet in jet_data:
+        for key in USED_KEYS:
+            try:
+                del jet[key]
+            except KeyError:
+                pass
+    chart_data["other_data"] = jet_data
+    return chart_data
 
 
 if __name__ == "__main__":
