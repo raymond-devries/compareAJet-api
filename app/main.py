@@ -30,10 +30,10 @@ def startup():
 
 
 def search_jet_db(search_string):
-    results = jets_collection.find({"$text": {"$search": search_string}},
-                                   {"name": 1, "slug": 1, "_id": 0,
-                                    "score": {"$meta": "textScore"}})
-    results.sort([('score', {'$meta': 'textScore'})])
+    results = jets_collection.aggregate(
+        [{"$search": {"autocomplete": {"query": search_string, "path": "name"}}},
+         {"$project": {"_id": 0, "name": 1, "slug": 1,
+                       "score": {"$meta": "searchScore"}}}])
     if results is None:
         return []
     return list(results)
