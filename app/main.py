@@ -1,16 +1,16 @@
 from fastapi import FastAPI, Query
 from pymongo import MongoClient, TEXT
 from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
 from typing import Optional, List
 from random import randrange
+import os
 
 app = FastAPI()
 
-example = ("boeing-f-a-18e-f-super-hornet", "lockheed-f-94-f-97-starfire")
+mongo_url = os.getenv("MONGO_URL")
+client = MongoClient(mongo_url)
 
-client = MongoClient('localhost', 27017)
-db = client["testjet"]
+db = client["jet_db"]
 jets_collection = db["jets"]
 
 app.add_middleware(
@@ -31,7 +31,8 @@ def startup():
 
 def search_jet_db(search_string):
     results = jets_collection.find({"$text": {"$search": search_string}},
-                                   {"name": 1, "slug": 1, "_id": 0, "score": {"$meta": "textScore"}})
+                                   {"name": 1, "slug": 1, "_id": 0,
+                                    "score": {"$meta": "textScore"}})
     results.sort([('score', {'$meta': 'textScore'})])
     if results is None:
         return []
@@ -39,7 +40,8 @@ def search_jet_db(search_string):
 
 
 def get_random_jet_db():
-    jet = list(jets_collection.aggregate([{"$sample": {"size": 1}}, {"$project": {"_id": 0, "name": 1, "slug": 1}}]))[0]
+    jet = list(jets_collection.aggregate(
+        [{"$sample": {"size": 1}}, {"$project": {"_id": 0, "name": 1, "slug": 1}}]))[0]
     return jet
 
 
@@ -118,7 +120,8 @@ def get_jet_charts(jet_slugs: Optional[List[str]] = Query(None)):
     chart_data = {"names": [data["name"] for data in jet_data],
                   "radar_chart1": radar_chart_data(jet_data, RADAR_CHART1),
                   "radar_chart2": radar_chart_data(jet_data, RADAR_CHART2),
-                  "bar_charts": {item + "bar chart": bar_chart_data(jet_data, item) for item in BAR_CHARTS}}
+                  "bar_charts": {item + "bar chart": bar_chart_data(jet_data, item) for
+                                 item in BAR_CHARTS}}
     for jet in jet_data:
         for key in USED_KEYS:
             try:
@@ -127,7 +130,3 @@ def get_jet_charts(jet_slugs: Optional[List[str]] = Query(None)):
                 pass
     chart_data["other_data"] = jet_data
     return chart_data
-
-
-if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
